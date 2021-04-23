@@ -38,25 +38,42 @@ else
     POOL_SIZE=(--pool-size "$POOL_SIZE")
 fi
 
-BEFORE=""
-LEFT=0
+BEFORE_BY_TIME=""
+BEFORE_BY_COUNT=""
+INDEX=0
+# count how many backups 
+BACKUPS_IN_TIME=""
 
 readonly NOW=$(date +%s -u)
-while read -r name last_modified rest; do
+while read -r last_modified name; do
     last_modified=$(date +%s -ud "$last_modified")
+    ((INDEX=INDEX+1))
     if [ $(((NOW-last_modified)/86400)) -ge $DAYS_TO_RETAIN ]; then
-        if [ -z "$BEFORE" ] || [ "$last_modified" -gt "$BEFORE_TIME" ]; then
+        [ -z "$BACKUPS_IN_TIME" ] && ((BACKUPS_IN_TIME=INDEX))
+        if [ -z "$BEFORE_BY_TIME" ] || [ "$last_modified" -gt "$BEFORE_TIME" ]; then
             BEFORE_TIME=$last_modified
-            BEFORE=$name
-        fi
-    else
-        # count how many backups will remain after we remove everything up to certain date
-        ((LEFT=LEFT+1))
-    fi
-done < <($WAL_E backup-list 2> /dev/null | sed '0,/^name\s*last_modified\s*/d')
+            BEFORE_BY_TIME=$name
 
-# we want keep at least N backups even if the number of days exceeded
-if [ ! -z "$BEFORE" ] && [ $LEFT -ge $DAYS_TO_RETAIN ]; then
+        fi
+        if [ $INDEX -ge $DAYS_TO_RETAIN ] || [ -z "$BEFORE_BY_COUNT" ]; then
+            # this is the last backup to keep
+            BEFORE_BY_COUNT=$name
+        fi
+    fi
+done < <($WAL_E backup-list 2> /dev/null | tail -n +2 | awk '{ print $2 " " $1 }' | sort -r)
+
+BEFORE=""
+if [ -z "$BEFORE_BY_COUNT" ]; then
+  log "Less than $DAYS_TO_RETAIN backups are present, not deleting any"
+else
+  if [ -z "$BACKUPS_IN_TIME" ] || [ $BACKUPS_IN_TIME -lt $DAYS_TO_RETAIN ]; then
+      BEFORE=$BEFORE_BY_COUNT
+  else
+      BEFORE=$BEFORE_BY_TIME
+  fi
+fi
+
+if [ ! -z "$BEFORE" ]; then
     if [[ "$USE_WALG_BACKUP" == "true" ]]; then
         $WAL_E delete before FIND_FULL "$BEFORE" --confirm
     else
