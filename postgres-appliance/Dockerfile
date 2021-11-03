@@ -493,6 +493,6 @@ RUN sed -i "s|/var/lib/postgresql.*|$PGHOME:/bin/bash|" /etc/passwd \
         fi
 
 COPY scripts bootstrap major_upgrade /scripts/
-COPY launch.sh /
+COPY launch.sh force_backup.sh /
 
 CMD ["/bin/sh", "/launch.sh", "init"]
